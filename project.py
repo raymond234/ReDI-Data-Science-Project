@@ -326,8 +326,13 @@ df_main_colnames = list(df_main.columns)
 df_main_head = df_main.head(20)
      
 
+#Reduce dimensions for the data. Retain just 47 out of the original 178 columns
+# Systematically remove columns containing the least data
+
 counts = df_main.isna().sum()
 counts = counts.to_dict()
+
+# Sort dictionary of counts of NaN in each column in descending 
 counts = {k: v for k, v in sorted(counts.items(), key=lambda item: item[1])}
 counts_full = list(counts)
 counts = counts_full[0:51]
