@@ -150,12 +150,67 @@ clinical_trial_df["Counts"] = clinical_trial_df["Component List"].apply(lambda x
 clinical_trial_df["%"] = clinical_trial_df["Counts"].apply(lambda x: 100 * x / float(clinical_trial_df["Counts"].sum()))
 clinical_trial_df = clinical_trial_df.merge(fda_name_df, how="left", on="aggregate_name").drop(columns=["Component List_y"], axis=1)
 
-# A prepack/generics company topped the list which is highly unusual. A quick check on google 
+
+clinical_trial_df["Counts"].sum() # Returns total of unique clinical trials = 821
+# A prepack/generics company topped the list which is highly unusual. A quick check on Google 
 # showed that many of the clinical trials carried out by the company was sponsored by J&J. Disregard 
-# the importance of openfda.manufacturers_name and merge the entire data with NCTID; fill in missing "NCT" prefixes and join with AACT data
+# the importance of openfda.manufacturers_name and merge the entire data with NCTID(use df4); fill in missing "NCT" prefixes and join with AACT data
+
 
 #Sanity proof result by joining dataframe with sponsors table and repeating the analyses
+df3["NCTID"] = df3["NCTID"].apply(lambda x: str(x).split(', '))
+mini_df3 = df3.head(10)
+df5 = df3.loc[:, ["aggregate_name", "NCTID"]].explode("NCTID") #3380
 
+
+df5 = df5.merge(fda_name_df, how="left", on = "aggregate_name")
+    
+df5["NCTID"] = df5["NCTID"].apply(lambda x: x if "NCT" in str(x) else "NCT" + x)
+
+df5["check"] = df5["NCTID"].apply(lambda x: True if "NCT" in str(x) else False)
+df5[df5["check"] == False].sum()
+df5 = df5.drop_duplicates(subset=["NCTID"])  #1363 unique NCT IDs
+
+
+
+df5 = df5.rename({"NCTID": "nct_id"}, axis=1)
+mini_df5 = df5.head(20)
+
+merged_aact = df5.merge(other_df, how="left", on="nct_id").drop(columns=["Component List", "check", "id"], axis=1)
+#Dataframe returned with more rows than 1363. Returned 1623 rows. Investigate.
+
+duplicates = merged_aact.duplicated(subset=["nct_id"], keep=False) #Keep first marks only subsequent occurrences after the first one as True and correctly returned
+#260 rows. I will select keep=False to return every duplicated entry and analyse it
+ 
+merged_duplicates = merged_aact[duplicates]
+ 
+# Result: Data showed that for many of the clinical trials; there is a lead company and there is a collaborator company
+# The Lead company is often the developer/owner/manufacturer of the product but other times both the lead, collaborator and 
+# manufacturer are different companies. What could this mean? Is it about a complex web of ownership of IP and licensing that 
+# means that different companies are involved in the development of a drug product, especially Biotech products.
+# Open for future research.
+
+
+#Moving on. Null values.
+isnan = merged_aact["name"].isnull()
+nctid_na = merged_aact[isnan]
+
+# Analysis of the first 2 shows that even though the drugs were manufactured by Gilead. The collaborators include Bill/Melinda Gates 
+# Foundation. Interesting insight! I have to bring the data for other organizations that are not Pharma companies.
+
+
+
+
+merged_mini = merged_aact.head(25)
+
+
+
+clin_trials_list = []
+clin_trials_list.extend(df3["NCTID"].tolist()) #len(list) is 1010; 
+
+clin_trials_list = [element for sublist in clin_trials_list for element in sublist] #Flattened to 3380.
+
+unique_trials = list(set(clin_trials_list)) #1372
 
 
 #def clinical_data():
