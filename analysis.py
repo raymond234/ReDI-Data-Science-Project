@@ -124,7 +124,7 @@ mini_df3 = df3.head(10)
 # Reduce dimension for df3
 df4 = df3.loc[:, ["spl_product_data_elements", "active_ingredient", 
                   "openfda.brand_name", "openfda.generic_name", "openfda.manufacturer_name", 
-                  "openfda.product_type", "openfda.route", "openfda.substance_name", "aggregate_name"]]
+                  "openfda.product_type", "openfda.route", "openfda.substance_name", "aggregate_name", "NCTID"]]
 
 mini_df4 = df4.head(20)
 # Result: A paltry 1010 of the entire data contains evidence of clinical data. 
@@ -140,7 +140,20 @@ df4_nan = df4[isnan]
 notnan = df4["openfda.manufacturer_name"].notnull()
 df4_notnan = df4[notnan]
 
-df4_notnan = df4_notnan.loc[:, "openfda.manufacturer_name", "aggregate_name"].merge(fda_name_df.loc[:, "Formal Name", "aggregate_name"], how="left", on="aggregate_name")
+df4_notnan = df4_notnan.merge(fda_name_df, how="left", on="aggregate_name").loc[:, ["openfda.manufacturer_name", "aggregate_name", "Formal Name", "NCTID"]]
+
+#Group by and compile every NCTID associated with each company into a component 
+# list column and find the lenght of that list
+fda_name_df = fda_name_df.groupby("aggregate_name")["openfda.manufacturer_name"].apply(list).reset_index(name="Component List")
+
+clinical_trial_df = df4_notnan.groupby("aggregate_name")["NCTID"].apply(list).reset_index(name="Component List")
+clinical_trial_df["Counts"] = clinical_trial_df["Component List"].apply(lambda x: len(list(set(set(x)))))
+clinical_trial_df["%"] = clinical_trial_df["Counts"].apply(lambda x: 100 * x / float(clinical_trial_df["Counts"].sum()))
+clinical_trial_df = clinical_trial_df.merge(fda_name_df, how="left", on="aggregate_name").drop(columns=["Component List_y"], axis=1)
+
+# A prepack/generics company topped the list which is highly unusual. A quick check on google 
+# showed that many of the clinical trials carried out by the company was sponsored by J&J. Disregard 
+# the importance of openfda.manufacturers_name and merge the entire data with NCTID; fill in missing "NCT" prefixes and join with AACT data
 
 #Sanity proof result by joining dataframe with sponsors table
 
