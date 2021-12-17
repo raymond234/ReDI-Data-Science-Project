@@ -8,13 +8,11 @@ import pandas as pd
 import numpy as np
 import re
 from ast import literal_eval
-from functools import reduce
 
 # Import data 
 
 df = pd.read_csv("C:/Users/hp\Desktop/ReDI DataScience/ReDI Project/slimmed_df.csv", dtype= str)
-# Data about Clinical trial and sponsors from AACT.
-other_df = pd.read_csv("C:/Users/hp/Desktop/ReDI DataScience/ReDI Project/sponsors.csv", dtype= str)
+
 
 # Clean up data; Remove Brackets
 
@@ -44,8 +42,17 @@ def clean_data(df):
 df2 = clean_data(df)
 df2.to_csv("df.csv", index=False)
 
+
+
+# Data about Clinical trial and sponsors from AACT.
+df = pd.read_csv("C:/Users/hp\Desktop/ReDI DataScience/ReDI Project/df.csv", dtype= str)
+other_df = pd.read_csv("C:/Users/hp/Desktop/ReDI DataScience/ReDI Project/sponsors.csv", dtype= str)
+# SELECT * FROM aact.ctgov.sponsors s WHERE agency_class='INDUSTRY';
+
+
 # Clean the boolean column
 df2["openfda.is_original_packager"] = df2["openfda.is_original_packager"].apply(lambda x: bool(str(x)[0]))
+col_names = list(df2.columns)
 
 #Small subset of data for viewing and manipulation purposes 
 # as raw data is expensive to play around with
@@ -80,6 +87,7 @@ df2["aggregate_name"] = df2["openfda.manufacturer_name"].apply(get_company_endin
 #Perform group by with aggregate names
 most_registrations = df2.groupby(by= "aggregate_name").size().reset_index(name="counts").sort_values(by="counts", ascending=False).iloc[1:, :]
 
+
 # Problem: Present data in a way that the formal name of a company is used to represent it.
 # Solution: Aggregate the diferent presentations of a company's name and use one of the as the 
 # formal name with which to present the results.
@@ -89,7 +97,7 @@ fda_name_df["Formal Name"] = fda_name_df["Component List"].apply(lambda x: x[0])
 
 # Result presentations.
 most_registrations = most_registrations.merge(fda_name_df, how="left", on="aggregate_name").drop(columns="Component List")
-# A prepacking company/Generics brand called Bryant Ranch has submitted the most appications to register new drugs
+# A prepacking company/Generics brand called Bryant Ranch has submitted the most applications to register new drugs
 
 #What proportion of entries correspond to each product type?
 product_type = df2.groupby(by= "openfda.product_type").size().reset_index(name="counts").sort_values(by="counts", ascending=False)
@@ -130,6 +138,7 @@ mini_df4 = df4.head(20)
 # Result: A paltry 1010 of the entire data contains evidence of clinical data. 
 # Less than 1% of the entire data
 
+
 # Separate the rows that have null values for "openfda.manufacturer_name".
 isnan = df4["openfda.manufacturer_name"].isnull()
 df4_nan = df4[isnan]
@@ -151,7 +160,7 @@ clinical_trial_df["%"] = clinical_trial_df["Counts"].apply(lambda x: 100 * x / f
 clinical_trial_df = clinical_trial_df.merge(fda_name_df, how="left", on="aggregate_name").drop(columns=["Component List_y"], axis=1)
 
 
-clinical_trial_df["Counts"].sum() # Returns total of unique clinical trials = 821
+clinical_trial_df["Counts"].sum() # Returns total of unique clinical trials = 821.. For rows containing Manufacturer's name
 # A prepack/generics company topped the list which is highly unusual. A quick check on Google 
 # showed that many of the clinical trials carried out by the company was sponsored by J&J. Disregard 
 # the importance of openfda.manufacturers_name and merge the entire data with NCTID(use df4); fill in missing "NCT" prefixes and join with AACT data
@@ -169,8 +178,7 @@ df5["NCTID"] = df5["NCTID"].apply(lambda x: x if "NCT" in str(x) else "NCT" + x)
 
 df5["check"] = df5["NCTID"].apply(lambda x: True if "NCT" in str(x) else False)
 df5[df5["check"] == False].sum()
-df5 = df5.drop_duplicates(subset=["NCTID"])  #1363 unique NCT IDs
-
+df5 = df5.drop_duplicates(subset=["NCTID"])  #1363 unique NCT IDs. For the whole data.
 
 
 df5 = df5.rename({"NCTID": "nct_id"}, axis=1)
@@ -193,37 +201,42 @@ merged_duplicates = merged_aact[duplicates]
 
 #Moving on. Null values.
 isnan = merged_aact["name"].isnull()
-nctid_na = merged_aact[isnan]
+nctid_na = merged_aact[isnan].drop(columns=["agency_class", "lead_or_collaborator", "name"], axis=1)  # 119 unique NCT ID
 
 # Analysis of the first 2 shows that even though the drugs were manufactured by Gilead. The collaborators include Bill/Melinda Gates 
 # Foundation. Interesting insight! I have to bring the data for other organizations that are not Pharma companies.
 
-
-
-
 merged_mini = merged_aact.head(25)
 
+# Import AACT sponsors data for rows where agency class != "INDUSTRY". SELECT * FROM aact.ctgov.sponsors s WHERE agency_class!='INDUSTRY';
+other_df2 = pd.read_csv("C:/Users/hp/Desktop/ReDI DataScience/ReDI Project/sponsors2.csv", dtype= str)
 
+nctid_na = nctid_na.merge(other_df2, how="left", on="nct_id").drop(columns=["id"], axis=1) # Returns 170 rows.
 
-clin_trials_list = []
-clin_trials_list.extend(df3["NCTID"].tolist()) #len(list) is 1010; 
+# Find out how many trials that are supported by the Bill and Melinda Gates foundation
+bill_mel = nctid_na[nctid_na["name"]=="Bill and Melinda Gates Foundation"] # Just 2 studies by Gilead
 
-clin_trials_list = [element for sublist in clin_trials_list for element in sublist] #Flattened to 3380.
+# Look at the outside big pharma supported data more closely. Who is active in this space?
+other_pharma = nctid_na.groupby(["name"]).size().reset_index(name="Counts").sort_values(by="Counts", ascending=False).iloc[1:, :]
+# NIAID = 6 Hi Fauci!, Bioprojet = 3
 
-unique_trials = list(set(clin_trials_list)) #1372
+# Separate out those still containing NA values. Join with the main data. Present full Clinical Trial Sponsorship data.
+notnan2 = merged_aact["name"].notnull()
+notnan3 = nctid_na["name"].notnull()
+nctid_final = pd.concat([merged_aact[notnan2], nctid_na[notnan3]], axis=0, ignore_index=True)
 
+result = nctid_final.groupby(["name"]).size().reset_index(name="Counts").sort_values(by="Counts", ascending=False)    # A list of the usual suspects. Hoffmann La Roche = 69, 
+# Gilead = 69, MSD = 66, Astra Zeneca = 62, Novartis = 58:(National Cancer Institute = 23. Wow! More than Boehringer Ingelheim = 18 and just below Bayer = 24) No presence of PrePack companies or Generic companies. Big Pharma/Biotech.
 
-#def clinical_data():
-#    for element in col_names:
-#        df["NCTID"] = df[element].apply(find_clinical_trial)       
-#df4 = df
+# Extra question. Which PrePack companies are partners for which Big Pharma companies? 
+
 
 
 # Find the active ingredient most represented in the data
 
 #Problem: Prepare column/ingredients in a way that it makes it easy for it to be analysed.
 # First: Split the ingredient "string" into a list
-df2["ingredient_list"] = df2["openfda.substance_name"].apply(lambda x: sorted(str(x).replace(' /', ",").replace(" AND", ",").split(', ')))
+df2["ingredient_list"] = df2["openfda.substance_name"].apply(lambda x: sorted(str(x).split(', ')))
 sample_df = df2.head(100) 
 
 # Second: Append this column into a flat list contains every element from every row.
@@ -232,7 +245,7 @@ ingredient_list.extend(df2["ingredient_list"].tolist()) # Returns a list of
 # lists with size 193589 (same as no of rows of dataframe)
 
 #Sanity check data. Find the final size/length of flattened list and compare after flattening
-final_size = sum([len(x) for x in ingredient_list]) # Result = 271303
+final_size = sum([len(x) for x in ingredient_list]) # Result = 271273
 
 #Flatten list
 ingredient_list = [element for sublist in ingredient_list for element in sublist] #Also = 271303
@@ -240,9 +253,9 @@ ingredient_list = [element for sublist in ingredient_list for element in sublist
 
 # Third: Perform calculations and percentages on every unique value in the list.
 # Find unique entries
-ingredients = sorted(list(set(ingredient_list))) #  5235 ingredients. 
+ingredients = sorted(list(set(ingredient_list))) #  5230 ingredients. 
 #On inspection, some of the large organic molecules were affected by my split 
-#and replace, For this analysis, I will ignore that, I have ideas about how to better 
+#and replace, For this analysis, I will ignore that, I have an idea about how to better 
 # do the replace and split to preserve their integrity
 
 #Calculate counts. Using a dictionary.
@@ -257,7 +270,28 @@ ingredients_df["%"] = ingredients_df["Counts"].apply(lambda x: round(100 * x / f
 # type of products contain all these alcohol
 
 
+# Break down the ingredient use further by product type and route of administration
 
+# First, "Explode" the ingredient_list column 
+
+df6 = df2.loc[:, ["openfda.product_type", "openfda.route", "ingredient_list"]].explode("ingredient_list") # Sanity check: No of rows = 271273
+
+group1_df = df6.groupby("ingredient_list")["openfda.product_type"].apply(list).reset_index(name="Product List") # Sanity check: Number of rows = 5230
+group1_df["Product_List_Count"] = group1_df["Product List"].apply(lambda x: {key: x.count(key) for key in x})
+group1_df["Product_List_%"] = group1_df["Product_List_Count"].apply(lambda x: {key: (100 * x[key]) / (float(sum(x.values()))) for key in x})
+
+group1_df["", "", ""] = pd.json_normalize(group1_df["Product_List_Count"])
+www = pd.DataFrame(group1_df["Product_List_Count"].values.tolist(), index=group1_df.index)
+
+df['tests'].values.tolist(), index=df.index
+
+group2_df = df6.groupby("ingredient_list")["openfda.route"].apply(list).reset_index(name="Route List") # Sanity check: Number of rows = 5230
+group2_df["Route_List_Count"] = group2_df["Route List"].apply(lambda x: {key: x.count(key) for key in x})
+group2_df["Route_List_%"] = group2_df["Route_List_Count"].apply(lambda x: {key: (100 * x[key]) / (float(sum(x.values()))) for key in x})
+
+group2_df[] = pd.json_normalize(group2_df["Route_List_Count"])
+
+group1_2_df = group1_df.merge(group2_df, how="left", on="ingredient_list")
 
 
 
