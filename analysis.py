@@ -45,12 +45,13 @@ df2.to_csv("df.csv", index=False)
 
 
 # Data about Clinical trial and sponsors from AACT.
-df = pd.read_csv("C:/Users/hp\Desktop/ReDI DataScience/ReDI Project/df.csv", dtype= str)
+df2 = pd.read_csv("C:/Users/hp\Desktop/ReDI DataScience/ReDI Project/df.csv", dtype= str)
 other_df = pd.read_csv("C:/Users/hp/Desktop/ReDI DataScience/ReDI Project/sponsors.csv", dtype= str)
 # SELECT * FROM aact.ctgov.sponsors s WHERE agency_class='INDUSTRY';
 
 
 # Clean the boolean column
+
 df2["openfda.is_original_packager"] = df2["openfda.is_original_packager"].apply(lambda x: bool(str(x)[0]))
 col_names = list(df2.columns)
 
@@ -99,10 +100,11 @@ fda_name_df["Formal Name"] = fda_name_df["Component List"].apply(lambda x: x[0])
 most_registrations = most_registrations.merge(fda_name_df, how="left", on="aggregate_name").drop(columns="Component List")
 # A prepacking company/Generics brand called Bryant Ranch has submitted the most applications to register new drugs
 
+
 #What proportion of entries correspond to each product type?
 product_type = df2.groupby(by= "openfda.product_type").size().reset_index(name="counts").sort_values(by="counts", ascending=False)
 product_type["%"] = product_type["counts"].apply(lambda x: 100 * x / float(product_type["counts"].sum()))
-
+product_type.to_csv("product.csv", index=False)
 #Result: 65.57% of the drugs registered are Human OTC drugs; 34.43% are Human Prescription drugs.
 # In Germany, the percentage of Human Precription drugs will certainly be higher
 
@@ -199,7 +201,7 @@ merged_duplicates = merged_aact[duplicates]
 # Open for future research.
 
 
-#Moving on. Null values.
+#Moving on. Checking out Null values.
 isnan = merged_aact["name"].isnull()
 nctid_na = merged_aact[isnan].drop(columns=["agency_class", "lead_or_collaborator", "name"], axis=1)  # 119 unique NCT ID
 
@@ -272,27 +274,37 @@ ingredients_df["%"] = ingredients_df["Counts"].apply(lambda x: round(100 * x / f
 
 # Break down the ingredient use further by product type and route of administration
 
-# First, "Explode" the ingredient_list column 
+# First, "Explode" the ingredient_list column into rows with single ingredients 
 
 df6 = df2.loc[:, ["openfda.product_type", "openfda.route", "ingredient_list"]].explode("ingredient_list") # Sanity check: No of rows = 271273
 
+# Group rows by ingredients into gather the product type entries into a list
 group1_df = df6.groupby("ingredient_list")["openfda.product_type"].apply(list).reset_index(name="Product List") # Sanity check: Number of rows = 5230
+
+# Get the frequency and their percentages for each product type per ingredient
 group1_df["Product_List_Count"] = group1_df["Product List"].apply(lambda x: {key: x.count(key) for key in x})
-group1_df["Product_List_%"] = group1_df["Product_List_Count"].apply(lambda x: {key: (100 * x[key]) / (float(sum(x.values()))) for key in x})
+group1_df["Product_List_%"] = group1_df["Product_List_Count"].apply(lambda x: {key: round((100 * x[key]) / (sum(x.values())), 2) for key in x})
 
-group1_df["", "", ""] = pd.json_normalize(group1_df["Product_List_Count"])
-www = pd.DataFrame(group1_df["Product_List_Count"].values.tolist(), index=group1_df.index)
+# Split the product count column into separate columns representing counts per product type
+plc = pd.json_normalize(group1_df["Product_List_Count"])
+plc = plc[plc.columns.dropna()]
 
-df['tests'].values.tolist(), index=df.index
+plc.columns =["Human OTC Products Appeared in","Prescription Drus Appeared in"]
 
-group2_df = df6.groupby("ingredient_list")["openfda.route"].apply(list).reset_index(name="Route List") # Sanity check: Number of rows = 5230
-group2_df["Route_List_Count"] = group2_df["Route List"].apply(lambda x: {key: x.count(key) for key in x})
-group2_df["Route_List_%"] = group2_df["Route_List_Count"].apply(lambda x: {key: (100 * x[key]) / (float(sum(x.values()))) for key in x})
 
-group2_df[] = pd.json_normalize(group2_df["Route_List_Count"])
+# Split the product count percentage column into separate columns representing percentage per product type 
+plp = pd.json_normalize(group1_df["Product_List_%"])
+plp = plp[plp.columns.dropna()]
+plp.columns =["% OTC","% Prescription"]
 
-group1_2_df = group1_df.merge(group2_df, how="left", on="ingredient_list")
+# Combine all the necessary columns
+group1_df = pd.concat([group1_df.iloc[:, :1], plc, plp], axis=1).merge(ingredients_df[["Ingredients", "Counts"]], how="left", left_on="ingredient_list", right_on="Ingredients")
+group1_df.drop(columns=["Ingredients"], axis=1, inplace=True)
+group1_df.drop(group1_df[group1_df["ingredient_list"] == "nan"].index, inplace=True)
+group1_df.sort_values(by=["Counts"], ascending=False, inplace=True)
 
+# Replace NaN values
+group1_df = group1_df.where(group1_df.notnull(), 0)
 
 
 
